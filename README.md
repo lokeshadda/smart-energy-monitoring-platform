@@ -40,7 +40,7 @@ The system demonstrates modern data engineering concepts including:
 
 ## Contributors
 
-- Lokesh Adda
+- Venkata Satya Lokesh Adda
 - Swetha Singireddy
 - Raghu Ram Komara
 
@@ -290,7 +290,7 @@ This platform demonstrates how streaming analytics can help utility providers:
 
 ## Author
 
-### Lokesh Adda
+### Venkata Satya Lokesh Adda
 
 Graduate Student in Business Analytics & Information Systems  
 Focused on Data Analytics, Data Engineering, Machine Learning, and Data Governance.
