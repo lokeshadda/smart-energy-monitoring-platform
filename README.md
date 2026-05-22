@@ -102,12 +102,6 @@ The system demonstrates modern data engineering concepts including:
 
 ### Monitoring & Analytics
 
-#### JupyterLab Dashboard
-![JupyterLab Dashboard](images/jupyterlab_interface.jpeg)
-
-#### Spark Master UI
-![Spark Master UI](images/spark_master_ui.jpeg)
-
 #### Airflow DAG Monitoring
 ![Airflow DAG](images/energy_rollup_dag.png)
 
@@ -199,8 +193,6 @@ smart-energy-monitoring-platform/
 │   ├── docker_ps_output.png
 │   ├── producer_output.png
 │   ├── spark_streaming_logs.png
-│   ├── jupyterlab_interface.jpeg
-│   ├── spark_master_ui.jpeg
 │   ├── energy.readings.png
 │   └── energy_rollup_dag.png
 │
@@ -259,7 +251,9 @@ docker exec -it spark bash -lc \
 
 ---
 
-## Access Services
+## Service Endpoints (During Deployment)
+
+The following endpoints are available when the platform is deployed locally using Docker Compose:
 
 | Service | URL |
 |---|---|
