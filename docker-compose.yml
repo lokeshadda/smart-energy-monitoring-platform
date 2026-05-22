@@ -1,0 +1,157 @@
+services:
+  # ---- Redpanda (Kafka-compatible, no ZooKeeper) ----
+  redpanda:
+    image: redpandadata/redpanda:v24.3.6
+    container_name: redpanda
+    hostname: redpanda
+    command:
+      - redpanda
+      - start
+      - --mode
+      - dev-container
+      - --smp
+      - "1"
+      - --memory
+      - 1G
+      - --reserve-memory
+      - 0M
+      - --overprovisioned
+      - --node-id
+      - "0"
+      - --kafka-addr
+      - PLAINTEXT://0.0.0.0:29092,OUTSIDE://0.0.0.0:9092
+      - --advertise-kafka-addr
+      - PLAINTEXT://redpanda:29092,OUTSIDE://localhost:9092
+      - --rpc-addr
+      - 0.0.0.0:33145
+      - --advertise-rpc-addr
+      - redpanda:33145
+    ports:
+      - "9092:9092"     # host (outside) Kafka
+      - "29092:29092"   # internal Docker network
+      - "9644:9644"     # admin API
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/29092 && exec 3>&- 3<&- && exit 0 || exit 1"]
+      interval: 5s
+      timeout: 2s
+      retries: 30
+      start_period: 5s
+    volumes:
+      - redpanda_data:/var/lib/redpanda/data
+    restart: unless-stopped
+
+  # ---- Redpanda Console (UI) ----
+  redpanda-console:
+    image: redpandadata/console:v2.7.2
+    container_name: redpanda-console
+    depends_on:
+      redpanda:
+        condition: service_started
+    environment:
+      KAFKA_BROKERS: "redpanda:29092"
+      REDPANDA_ADMIN_API: "http://redpanda:9644"
+    ports:
+      - "8081:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/8080 && exec 3>&- 3<&- && exit 0 || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    restart: unless-stopped
+
+  # ---- Redis ----
+  redis:
+    image: redis:7.2-alpine
+    container_name: redis
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "PING"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+  # ---- Spark/Jupyter (PySpark installed at startup) ----
+  spark:
+    image: quay.io/jupyter/pyspark-notebook:aarch64-spark-3.5.3
+    container_name: spark
+    depends_on:
+      redpanda:
+        condition: service_started
+      redis:
+        condition: service_healthy
+    ports:
+      - "8888:8888"
+    environment:
+      PYSPARK_PYTHON: python
+      PYSPARK_DRIVER_PYTHON: python
+      KAFKA_BOOTSTRAP: redpanda:29092
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+    volumes:
+      - ./spark:/home/jovyan/spark
+      - ./producer:/home/jovyan/producer
+      - ./notebooks:/home/jovyan/notebooks
+    command: >
+      bash -c "
+        pip install -q pyspark==3.5.3 kafka-python redis pyarrow &&
+        start-notebook.sh
+      "
+    restart: unless-stopped
+
+  # ---- Airflow (SequentialExecutor, self-init) ----
+  airflow:
+    image: apache/airflow:2.10.2-python3.11
+    container_name: airflow
+    depends_on:
+      redis:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      AIRFLOW__CORE__EXECUTOR: SequentialExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      AIRFLOW__WEBSERVER__SECRET_KEY: "change-me-a-long-random-string"
+      AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "False"
+      _AIRFLOW_DB_UPGRADE: "true"
+      _AIRFLOW_WWW_USER_CREATE: "true"
+      _AIRFLOW_WWW_USER_USERNAME: "admin"
+      _AIRFLOW_WWW_USER_PASSWORD: "admin"
+      _AIRFLOW_WWW_USER_FIRSTNAME: "Admin"
+      _AIRFLOW_WWW_USER_LASTNAME: "User"
+      _AIRFLOW_WWW_USER_EMAIL: "admin@example.com"
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./spark:/opt/app/spark
+      - airflow_data:/opt/airflow
+    command: >
+      bash -c "
+        pip install --no-cache-dir --quiet pandas pyarrow &&
+        airflow db init &&
+        airflow users create \
+          --username $$'_AIRFLOW_WWW_USER_USERNAME' \
+          --password $$'_AIRFLOW_WWW_USER_PASSWORD' \
+          --firstname $$'_AIRFLOW_WWW_USER_FIRSTNAME' \
+          --lastname $$'_AIRFLOW_WWW_USER_LASTNAME' \
+          --role Admin \
+          --email $$'_AIRFLOW_WWW_USER_EMAIL' || true &&
+        airflow scheduler & exec airflow webserver
+      "
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/8080 && exec 3>&- 3<&- && exit 0 || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 40
+      start_period: 20s
+    restart: unless-stopped
+
+volumes:
+  redpanda_data:
+  redis_data:
+  airflow_data:
